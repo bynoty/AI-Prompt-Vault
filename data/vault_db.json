@@ -1,0 +1,111 @@
+{
+  "prompts": [
+    {
+      "id": "p_1",
+      "title": "React 19 Performance Optimizer",
+      "description": "A highly specialized system prompt designed to review React 19 codebases, identifying unnecessary rendering and recommending compiler-friendly hooks.",
+      "content": "You are an expert React 19 compiler optimization assistant. Analyze the given code for:\n1. Unnecessary useEffect uses and state duplication.\n2. Functions/objects passed as props that should be memoized or kept outside components.\n3. Optimization opportunities using React 19 features like use() and Action states.\n\nProvide clear refactored code blocks and explain why your refactoring is compiler-friendly.",
+      "category": "Development",
+      "tags": [
+        "React",
+        "Performance",
+        "Optimization"
+      ],
+      "platform": "Gemini",
+      "isFavorite": true,
+      "versions": [
+        {
+          "version": 1,
+          "content": "You are an expert React 19 compiler optimization assistant. Analyze the given code...",
+          "updatedAt": "2026-07-20T01:04:58.299Z",
+          "comment": "Initial prompt seed"
+        }
+      ],
+      "createdAt": "2026-07-20T01:04:58.303Z",
+      "updatedAt": "2026-07-20T01:04:58.303Z"
+    },
+    {
+      "id": "p_2",
+      "title": "Advanced Claude 3.5 System Architect",
+      "description": "Craft detailed software architectures with Clean Architecture guidelines, bento UI models, and scalable API schemas.",
+      "content": "You are a Principal Software Architect. Draft a software design specification for the requested system. Your output must strictly follow Clean Architecture: \n- Domain model & Business rules (Entities)\n- Use cases (Interactors)\n- Interface adapters (Controllers, Gateways, Presenters)\n- Infrastructure (DB, Frameworks, Web API)\n\nInclude a detailed Mermaid diagram representing the flow of data.",
+      "category": "Architecture",
+      "tags": [
+        "Claude",
+        "Clean Architecture",
+        "Mermaid"
+      ],
+      "platform": "Claude",
+      "isFavorite": false,
+      "versions": [
+        {
+          "version": 1,
+          "content": "You are a Principal Software Architect. Draft a software design specification...",
+          "updatedAt": "2026-07-20T01:04:58.303Z",
+          "comment": "Initial seed prompt"
+        }
+      ],
+      "createdAt": "2026-07-20T01:04:58.303Z",
+      "updatedAt": "2026-07-20T01:04:58.303Z"
+    },
+    {
+      "id": "p_3",
+      "title": "Cursor Rule-Based Context Generator",
+      "description": "Produces customized .cursorrules content designed to enforce rigorous TypeScript, component composition, and CSS discipline in active projects.",
+      "content": "Generate a custom `.cursorrules` file for a full-stack Next.js/Tailwind/TypeScript project. Ensure it includes constraints to:\n- Restrict client-side API key usage strictly.\n- Enforce functional components with TypeScript.\n- Encourage Tailwind arbitrary values avoidance.\n- Maintain absolute directories resolution alias.",
+      "category": "Prompt Engineering",
+      "tags": [
+        "Cursor",
+        "TypeScript",
+        "Rules"
+      ],
+      "platform": "Cursor",
+      "isFavorite": true,
+      "versions": [
+        {
+          "version": 1,
+          "content": "Generate a custom `.cursorrules` file for a full-stack Next.js/Tailwind/TypeScript project...",
+          "updatedAt": "2026-07-20T01:04:58.303Z",
+          "comment": "CursorRules Creator seed"
+        }
+      ],
+      "createdAt": "2026-07-20T01:04:58.303Z",
+      "updatedAt": "2026-07-20T01:04:58.303Z"
+    }
+  ],
+  "markdowns": [
+    {
+      "id": "md_1",
+      "path": "README.md",
+      "title": "AI Prompt Vault",
+      "content": "# AI Prompt Vault 🌌\n\nWelcome to your self-hosted centralized AI Knowledge repository! This platform is designed to store, manage, test, and optimize AI prompts, technical documentation, and .md files.\n\n### Core Platform Architecture\n```mermaid\ngraph TD\n    A[Client UI - React/Vite] -->|API Requests| B[Full-Stack Express Server]\n    B -->|Search/Sync| C[Local File-Backed DB]\n    B -->|Embeddings & Chat| D[Gemini API - RAG Engine]\n    B -->|Git Operations| E[Public Repositories]\n```\n\n### Features Included:\n1. **Prompt Library**: Complete versioning, copy-to-clipboard, tag management, platform labels.\n2. **Markdown Workspace**: Mermaid diagrams parsing, nested directories exploration, and custom folder structures.\n3. **Fuzzy Search**: Instantly find prompts or markdowns.\n4. **Gemini RAG Assistant**: Ask questions that search deep into your stored Markdown documents.",
+      "isFavorite": true,
+      "updatedAt": "2026-07-20T01:04:58.303Z"
+    },
+    {
+      "id": "md_2",
+      "path": "skills/prompting.md",
+      "title": "Advanced Prompting Skill",
+      "content": "# Advanced Prompting Techniques 💡\n\nThis guide outlines the core techniques supported by state-of-the-art LLMs (Gemini 2.5/3.5, Claude 3.5, ChatGPT-4o).\n\n### 1. Few-Shot Prompting\nProvide structured inputs and outputs as context before requesting the target response:\n```text\nInput: Write a greeting for a developer.\nOutput: Hello developer! May your compilation always succeed.\nInput: Write a greeting for a designer.\nOutput: Greetings creator! May your layout always balance perfectly.\n```\n\n### 2. ReAct (Reason-Action-Observation) Pattern\nEnforce reasoning phases before execution:\n```text\nThought: I need to calculate the sales tax.\nAction: calculateTax(100, 0.07)\nObservation: Tax is 7.\nThought: The final total is 107.\n```\n\n### 3. RAG Optimization\nOptimize chunk structures to feed prompt windows with clean context. Use hierarchical document indexes to maintain layout relations.",
+      "isFavorite": false,
+      "updatedAt": "2026-07-20T01:04:58.303Z"
+    },
+    {
+      "id": "md_3",
+      "path": "rules/rules.md",
+      "title": "System Rules Config",
+      "content": "# System Rules & Quality Guidelines 🛡️\n\nTo ensure codebase cleanliness and application longevity, adhere strictly to the following parameters:\n\n- **Client Security**: Never leak credentials, API tokens, or workspace paths to the frontend.\n- **Component Composition**: Prefer small modular React components in `src/components/` rather than consolidating everything inside `App.tsx`.\n- **Error Boundaries**: Wrap network requests and file reads in robust try-catch handlers.",
+      "isFavorite": false,
+      "updatedAt": "2026-07-20T01:04:58.303Z"
+    }
+  ],
+  "ragIndex": [],
+  "activityLogs": [
+    {
+      "id": "act_1784509498303_i2pac",
+      "type": "rag_index",
+      "description": "Database initialized with elegant sample data.",
+      "timestamp": "2026-07-20T01:04:58.303Z"
+    }
+  ]
+}
