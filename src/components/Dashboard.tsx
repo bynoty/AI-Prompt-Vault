@@ -24,30 +24,36 @@ export default function Dashboard({ stats, prompts, markdowns, onSelectPrompt, o
       setDbChecking(true);
       try {
         const res = await fetch('/api/db/status');
-        if (res.ok) {
+        const contentType = res.headers.get('content-type') || '';
+        if (res.ok && contentType.includes('application/json')) {
           const data = await res.json();
           setDbActive(!!data.active);
+          setDbChecking(false);
+          return;
+        }
+      } catch {
+        // Backend API unreachable or HTML fallback returned (Vercel mode)
+      }
+
+      // Fallback for Vercel / Static mode: Test Supabase client directly
+      try {
+        const { error } = await supabase.from('prompts').select('id').limit(1);
+        if (error) {
+          if (error.message && (
+            error.message.toLowerCase().includes('failed to fetch') ||
+            error.message.toLowerCase().includes('networkerror') ||
+            error.message.toLowerCase().includes('fetch failed')
+          )) {
+            setDbActive(false);
+          } else {
+            // Table response or authorization response received from Supabase
+            setDbActive(true);
+          }
         } else {
-          // Fallback to checking client-side Supabase directly (for serverless/Vercel)
-          const { error } = await supabase.from('prompts').select('id').limit(1);
-          if (error && error.message && error.message.includes('Failed to fetch')) {
-            setDbActive(false);
-          } else {
-            setDbActive(true);
-          }
+          setDbActive(true);
         }
-      } catch (err) {
-        // Fallback to checking client-side Supabase directly (for serverless/Vercel)
-        try {
-          const { error } = await supabase.from('prompts').select('id').limit(1);
-          if (error && error.message && error.message.includes('Failed to fetch')) {
-            setDbActive(false);
-          } else {
-            setDbActive(true);
-          }
-        } catch {
-          setDbActive(false);
-        }
+      } catch {
+        setDbActive(false);
       } finally {
         setDbChecking(false);
       }
