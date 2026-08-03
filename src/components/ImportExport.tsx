@@ -299,7 +299,7 @@ export default function ImportExport({ prompts, markdowns, onBulkImport, isDark 
   };
 
   const handleSimulateOfflinePrompt = () => {
-    const mockId = 'p_off_' + Math.random().toString(36).substr(2, 5);
+    const mockId = crypto.randomUUID();
     queuePendingRecord('prompt', 'insert', mockId, {
       id: mockId,
       title: `Offline Prompt ${Math.floor(Math.random() * 1000)}`,
@@ -317,7 +317,7 @@ export default function ImportExport({ prompts, markdowns, onBulkImport, isDark 
   };
 
   const handleSimulateOfflineDoc = () => {
-    const mockId = 'doc_off_' + Math.random().toString(36).substr(2, 5);
+    const mockId = crypto.randomUUID();
     queuePendingRecord('markdown', 'insert', mockId, {
       id: mockId,
       path: `rules/offline-spec-${Math.floor(Math.random() * 1000)}.md`,

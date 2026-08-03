@@ -339,7 +339,7 @@ export default function App() {
     } catch (err) {
       console.warn('Backend prompt add failed. Executing directly on Supabase client-side...', err);
       const { data: { session } } = await supabase.auth.getSession();
-      const generatedId = `p_${Date.now()}`;
+      const generatedId = crypto.randomUUID();
       const newPrompt: Prompt = {
         id: generatedId,
         title: p.title || "Untitled Prompt",
@@ -528,7 +528,7 @@ export default function App() {
     } catch (err) {
       console.warn('Backend markdown add failed. Executing directly on Supabase client-side...', err);
       const { data: { session } } = await supabase.auth.getSession();
-      const generatedId = `md_${Date.now()}`;
+      const generatedId = crypto.randomUUID();
       const cleanPath = d.path ? (d.path.startsWith('/') ? d.path.substring(1) : d.path) : '';
       const newDoc: MarkdownDoc = {
         id: generatedId,
@@ -719,7 +719,7 @@ export default function App() {
       if (Array.isArray(importedPrompts)) {
         for (const p of importedPrompts) {
           if (p.title && p.content) {
-            const generatedId = p.id || `p_imp_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+            const generatedId = p.id && p.id.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i) ? p.id : crypto.randomUUID();
             const newPrompt: Prompt = {
               id: generatedId,
               title: p.title,
@@ -771,7 +771,7 @@ export default function App() {
         for (const m of importedMarkdowns) {
           if (m.path && m.content) {
             const cleanPath = m.path.startsWith('/') ? m.path.substring(1) : m.path;
-            const generatedId = m.id || `md_imp_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+            const generatedId = m.id && m.id.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i) ? m.id : crypto.randomUUID();
             const newDoc: MarkdownDoc = {
               id: generatedId,
               path: cleanPath,
