@@ -1,6 +1,26 @@
 {
   "prompts": [
     {
+      "id": "p_1785747852914",
+      "title": "Test Sync Error",
+      "description": "Testing Supabase insert error",
+      "content": "Test content",
+      "category": "General",
+      "tags": [],
+      "platform": "Gemini",
+      "isFavorite": false,
+      "versions": [
+        {
+          "version": 1,
+          "content": "Test content",
+          "updatedAt": "2026-08-03T09:04:12.914Z",
+          "comment": "Created prompt"
+        }
+      ],
+      "createdAt": "2026-08-03T09:04:12.914Z",
+      "updatedAt": "2026-08-03T09:04:12.914Z"
+    },
+    {
       "id": "p_1",
       "title": "React 19 Performance Optimizer",
       "description": "A highly specialized system prompt designed to review React 19 codebases, identifying unnecessary rendering and recommending compiler-friendly hooks.",
@@ -101,6 +121,12 @@
   ],
   "ragIndex": [],
   "activityLogs": [
+    {
+      "id": "act_1785747852914_ej6mc",
+      "type": "create_prompt",
+      "description": "Created prompt \"Test Sync Error\"",
+      "timestamp": "2026-08-03T09:04:12.914Z"
+    },
     {
       "id": "act_1784509498303_i2pac",
       "type": "rag_index",

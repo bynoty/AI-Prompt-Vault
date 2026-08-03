@@ -184,39 +184,70 @@ export default function ImportExport({ prompts, markdowns, onBulkImport, isDark 
       if (token) {
         setSyncPercent(60);
         setSyncMsg('Pushing local database records (vault_db.json) to Supabase Cloud...');
-        const res = await fetch('/api/db/migrate', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`
-          }
-        });
-        const data = await res.json();
-        setSyncPercent(100);
-
-        if (res.ok && data.success) {
-          const totalPrompts = (summary.syncedPrompts || 0) + (data.migratedPrompts || 0);
-          const totalDocs = (summary.syncedDocs || 0) + (data.migratedDocs || 0);
-          
-          const filteredDetails = summary.details.filter(d => !d.includes('No pending local records'));
-          if (data.migratedPrompts > 0 || data.migratedDocs > 0) {
-            filteredDetails.push(`Uploaded ${data.migratedPrompts} prompts and ${data.migratedDocs} docs from local vault DB to Supabase Cloud.`);
-          } else if (data.message) {
-            filteredDetails.push(data.message);
-          }
-
-          setSyncSummary({
-            success: true,
-            syncedPrompts: totalPrompts,
-            syncedDocs: totalDocs,
-            failedCount: summary.failedCount || 0,
-            skippedCount: (summary.skippedCount || 0) + (data.skippedPrompts || 0) + (data.skippedDocs || 0),
-            details: filteredDetails.length > 0 ? filteredDetails : ['Local data and cloud vault are in sync.']
+        try {
+          const res = await fetch('/api/db/migrate', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+            }
           });
+          const contentType = res.headers.get('content-type') || '';
+          if (contentType.includes('application/json')) {
+            const data = await res.json();
+            setSyncPercent(100);
 
-          setSyncMsg(`Push Complete! Synced ${totalPrompts} prompts and ${totalDocs} markdown documents to Supabase Cloud.`);
-        } else {
+            if (res.ok && data.success) {
+              const totalPrompts = (summary.syncedPrompts || 0) + (data.migratedPrompts || 0);
+              const totalDocs = (summary.syncedDocs || 0) + (data.migratedDocs || 0);
+              
+              const filteredDetails = summary.details.filter(d => !d.includes('No pending local records'));
+              if (data.migratedPrompts > 0 || data.migratedDocs > 0) {
+                filteredDetails.push(`Uploaded ${data.migratedPrompts} prompts and ${data.migratedDocs} docs from local vault DB to Supabase Cloud.`);
+              } else if (data.message) {
+                filteredDetails.push(data.message);
+              }
+
+              setSyncSummary({
+                success: true,
+                syncedPrompts: totalPrompts,
+                syncedDocs: totalDocs,
+                failedCount: summary.failedCount || 0,
+                skippedCount: (summary.skippedCount || 0) + (data.skippedPrompts || 0) + (data.skippedDocs || 0),
+                details: filteredDetails.length > 0 ? filteredDetails : ['Local data and cloud vault are in sync.']
+              });
+
+              setSyncMsg(`Push Complete! Synced ${totalPrompts} prompts and ${totalDocs} markdown documents to Supabase Cloud.`);
+            } else {
+              setSyncSummary(summary);
+            }
+          } else {
+            // Server-side migration not available (e.g. Vercel static deployment) — skip gracefully
+            console.warn('Server /api/db/migrate not available (non-JSON response). Skipping server-side migration.');
+            setSyncPercent(100);
+            setSyncSummary(summary);
+            const totalP = summary.syncedPrompts || 0;
+            const totalD = summary.syncedDocs || 0;
+            if (totalP > 0 || totalD > 0) {
+              setSyncMsg(`Push Complete! Synced ${totalP} prompts and ${totalD} docs directly to Supabase Cloud.`);
+            } else if (summary.failedCount > 0) {
+              setSyncMsg(`Sync completed with ${summary.failedCount} failed items. Check your Supabase login session.`);
+            } else {
+              setSyncMsg('Push complete. No pending records to sync.');
+            }
+          }
+        } catch (migrateErr) {
+          // Server endpoint unreachable — skip server-side migration, rely on client-side sync only
+          console.warn('Server /api/db/migrate unreachable:', migrateErr);
+          setSyncPercent(100);
           setSyncSummary(summary);
+          const totalP = summary.syncedPrompts || 0;
+          const totalD = summary.syncedDocs || 0;
+          if (totalP > 0 || totalD > 0) {
+            setSyncMsg(`Push Complete! Synced ${totalP} prompts and ${totalD} docs directly to Supabase Cloud.`);
+          } else {
+            setSyncMsg('Push complete (server migration skipped).');
+          }
         }
       } else {
         setSyncSummary(summary);
@@ -315,6 +346,12 @@ export default function ImportExport({ prompts, markdowns, onBulkImport, isDark 
           'Authorization': token ? `Bearer ${token}` : ''
         }
       });
+      const contentType = res.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        // On Vercel/static deployments, this endpoint doesn't exist
+        setMigrationError('Server migration endpoint not available. This feature requires the full-stack Express server (npm run dev). On Vercel, use "Push to Cloud" instead which syncs directly via the client.');
+        return;
+      }
       const data = await res.json();
       if (res.ok) {
         if (data.success) {
