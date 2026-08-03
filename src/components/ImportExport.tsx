@@ -23,9 +23,11 @@ import {
   CloudDownload,
   CloudLightning,
   ShieldAlert,
-  ListTodo
+  ListTodo,
+  Github
 } from 'lucide-react';
 import JSZip from 'jszip';
+import { supabase } from '../lib/supabase';
 import { 
   getPendingRecords, 
   getSyncStatus, 
@@ -77,6 +79,60 @@ export default function ImportExport({ prompts, markdowns, onBulkImport, isDark 
   const [syncSummary, setSyncSummary] = useState<SyncSummary | null>(null);
   const [conflictStrategy, setConflictStrategy] = useState<'latest_wins' | 'local_wins' | 'cloud_wins'>('latest_wins');
 
+  // Inline Supabase Cloud Auth State
+  const [showCloudLogin, setShowCloudLogin] = useState(false);
+  const [cloudEmail, setCloudEmail] = useState('');
+  const [cloudPassword, setCloudPassword] = useState('');
+  const [cloudAuthLoading, setCloudAuthLoading] = useState(false);
+  const [cloudAuthError, setCloudAuthError] = useState('');
+  const [cloudAuthSuccess, setCloudAuthSuccess] = useState('');
+
+  const handleCloudLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!cloudEmail || !cloudPassword) return;
+    setCloudAuthLoading(true);
+    setCloudAuthError('');
+    setCloudAuthSuccess('');
+    try {
+      const email = cloudEmail.includes('@') ? cloudEmail : `${cloudEmail}@promptvault.local`;
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password: cloudPassword,
+      });
+      if (error) throw error;
+      if (data.session && data.user) {
+        setCloudAuthSuccess('เข้าสู่ระบบ Supabase Cloud สำเร็จ! กำลังดึงข้อมูล...');
+        setShowCloudLogin(false);
+        setCloudEmail('');
+        setCloudPassword('');
+        setTimeout(() => {
+          handlePullFromCloud();
+        }, 500);
+      }
+    } catch (err: any) {
+      setCloudAuthError(err.message || 'เข้าสู่ระบบ Supabase Cloud ไม่สำเร็จ หากคุณสมัครบัญชีด้วย GitHub กรุณากดปุ่ม "Sign in with GitHub" ด้านล่าง');
+    } finally {
+      setCloudAuthLoading(false);
+    }
+  };
+
+  const handleGithubLogin = async () => {
+    setCloudAuthLoading(true);
+    setCloudAuthError('');
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'github',
+        options: {
+          redirectTo: window.location.href,
+        },
+      });
+      if (error) throw error;
+    } catch (err: any) {
+      setCloudAuthError(err.message || 'การยืนยันตัวตนผ่าน GitHub ไม่สำเร็จ');
+      setCloudAuthLoading(false);
+    }
+  };
+
   const refreshSyncState = () => {
     setSyncQueue(getPendingRecords());
     setSyncStatus(getSyncStatus());
@@ -102,6 +158,9 @@ export default function ImportExport({ prompts, markdowns, onBulkImport, isDark 
     } catch (err: any) {
       console.error('Push to cloud sync failed:', err);
       setSyncMsg(`Sync failed: ${err.message || 'Unknown network error'}`);
+      if (err.message?.includes('authenticated')) {
+        setShowCloudLogin(true);
+      }
     } finally {
       setSyncingCloud(false);
     }
@@ -117,10 +176,12 @@ export default function ImportExport({ prompts, markdowns, onBulkImport, isDark 
       setSyncPercent(100);
       if (res.success) {
         setSyncMsg(`Successfully downloaded ${res.promptsCount} prompts and ${res.docsCount} documents to local cache.`);
-        // We can reload or trigger a message
         alert(`Successfully pulled ${res.promptsCount} prompts and ${res.docsCount} markdown documents from Supabase to local client cache!`);
       } else {
         setSyncMsg(`Pull failed: ${res.error || 'Failed to authenticate or download'}`);
+        if (res.error?.includes('authenticated') || res.error?.includes('session')) {
+          setShowCloudLogin(true);
+        }
       }
       refreshSyncState();
     } catch (err: any) {
@@ -868,6 +929,79 @@ export default function ImportExport({ prompts, markdowns, onBulkImport, isDark 
                 Pull from Cloud
               </button>
             </div>
+
+            {/* Supabase Cloud Sign-In Card for iPad / Offline users */}
+            {showCloudLogin && (
+              <div className={`p-4 rounded-xl border space-y-3 ${isDark ? 'bg-violet-950/20 border-violet-800/40' : 'bg-violet-50 border-violet-200'}`}>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-violet-400 flex items-center gap-1.5">
+                    <CloudLightning className="w-4 h-4 text-violet-500" />
+                    Sign in to Supabase Cloud
+                  </span>
+                  <button 
+                    type="button" 
+                    onClick={() => setShowCloudLogin(false)}
+                    className="text-zinc-400 hover:text-zinc-200 cursor-pointer"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+                <p className="text-[11px] text-zinc-400 leading-relaxed">
+                  หากคุณสร้างบัญชี Supabase โดยใช้บัญชี **GitHub** ให้กดปุ่มด้านล่างเพื่อยืนยันตัวตน
+                </p>
+
+                {cloudAuthError && (
+                  <div className="text-[11px] text-rose-400 font-medium bg-rose-500/10 p-2.5 rounded-lg border border-rose-500/20 leading-relaxed">
+                    {cloudAuthError}
+                  </div>
+                )}
+                {cloudAuthSuccess && (
+                  <div className="text-[11px] text-emerald-400 font-medium bg-emerald-500/10 p-2.5 rounded-lg border border-emerald-500/20">
+                    {cloudAuthSuccess}
+                  </div>
+                )}
+
+                {/* Primary GitHub OAuth Button */}
+                <button
+                  type="button"
+                  onClick={handleGithubLogin}
+                  disabled={cloudAuthLoading}
+                  className="w-full py-2.5 px-3 rounded-lg text-xs font-bold text-white bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 flex items-center justify-center gap-2 cursor-pointer transition-all disabled:opacity-50 shadow-sm"
+                >
+                  <Github className="w-4 h-4" />
+                  <span>{cloudAuthLoading ? 'Connecting to GitHub...' : 'Sign in with GitHub (Supabase OAuth)'}</span>
+                </button>
+
+                <div className="relative my-2 flex items-center justify-center">
+                  <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-zinc-800"></div></div>
+                  <span className="relative bg-zinc-950 px-2 text-[10px] text-zinc-500 uppercase tracking-wider font-semibold">หรือใช้ Email / Password</span>
+                </div>
+
+                <form onSubmit={handleCloudLogin} className="space-y-2">
+                  <input
+                    type="text"
+                    placeholder="Supabase Email"
+                    value={cloudEmail}
+                    onChange={(e) => setCloudEmail(e.target.value)}
+                    className={`w-full p-2 text-xs rounded-lg border outline-none ${isDark ? 'bg-zinc-900 border-zinc-700 text-zinc-100' : 'bg-white border-zinc-300 text-zinc-800'}`}
+                  />
+                  <input
+                    type="password"
+                    placeholder="Supabase Password"
+                    value={cloudPassword}
+                    onChange={(e) => setCloudPassword(e.target.value)}
+                    className={`w-full p-2 text-xs rounded-lg border outline-none ${isDark ? 'bg-zinc-900 border-zinc-700 text-zinc-100' : 'bg-white border-zinc-300 text-zinc-800'}`}
+                  />
+                  <button
+                    type="submit"
+                    disabled={cloudAuthLoading}
+                    className="w-full py-2 rounded-lg text-xs font-bold text-white bg-violet-600 hover:bg-violet-500 cursor-pointer transition-all disabled:opacity-50"
+                  >
+                    {cloudAuthLoading ? 'Authenticating...' : 'Sign In with Email'}
+                  </button>
+                </form>
+              </div>
+            )}
 
             {/* Simulated Offline Workload Creator */}
             <div className={`p-4 rounded-xl border space-y-2.5 ${isDark ? 'bg-zinc-950/40 border-zinc-850' : 'bg-zinc-50/50 border-zinc-200'}`}>

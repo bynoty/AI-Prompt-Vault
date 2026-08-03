@@ -1,0 +1,15 @@
+name: Keep Alive
+
+on:
+  schedule:
+    # Runs every 12 hours
+    - cron: '0 */12 * * *'
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Application
+        run: |
+          curl -s -f https://ai-prompt-vault-psi.vercel.app/api/health || echo "Ping failed or route not responding"

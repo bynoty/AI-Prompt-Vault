@@ -158,6 +158,7 @@ export default function AuthLayout({ children, onLoginSuccess, isDark }: AuthLay
     setLoading(true);
     setTimeout(async () => {
       try {
+        // Try backend server login
         const res = await fetch('/api/auth/login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },

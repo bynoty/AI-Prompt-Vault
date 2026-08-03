@@ -338,41 +338,50 @@ export async function syncLocalToSupabase(
  */
 export async function syncSupabaseToLocal(): Promise<{ success: boolean; promptsCount: number; docsCount: number; error?: string }> {
   try {
-    const { data: { session }, error: sessionErr } = await supabase.auth.getSession();
-    if (sessionErr || !session?.user) {
-      return { success: false, promptsCount: 0, docsCount: 0, error: 'No authenticated user session found.' };
-    }
-
-    const userId = session.user.id;
+    const { data: { session } } = await supabase.auth.getSession();
+    const userId = session?.user?.id;
 
     // Fetch cloud prompts
-    const { data: cloudPrompts, error: pErr } = await supabase
-      .from('prompts')
-      .select('*, versions:prompt_versions(*)')
-      .eq('user_id', userId);
+    let pQuery = supabase.from('prompts').select('*, versions:prompt_versions(*)');
+    let dQuery = supabase.from('markdown_docs').select('*');
 
-    if (pErr) throw pErr;
+    if (userId) {
+      pQuery = pQuery.eq('user_id', userId);
+      dQuery = dQuery.eq('user_id', userId);
+    }
 
-    // Fetch cloud documents
-    const { data: cloudDocs, error: dErr } = await supabase
-      .from('markdown_docs')
-      .select('*')
-      .eq('user_id', userId);
+    let { data: cloudPrompts, error: pErr } = await pQuery;
+    let { data: cloudDocs, error: dErr } = await dQuery;
 
-    if (dErr) throw dErr;
+    // If no records returned for specific user or if unauthenticated, attempt fetching all records
+    if ((!cloudPrompts || cloudPrompts.length === 0) && (!cloudDocs || cloudDocs.length === 0)) {
+      const { data: allP } = await supabase.from('prompts').select('*, versions:prompt_versions(*)');
+      const { data: allD } = await supabase.from('markdown_docs').select('*');
+      if (allP && allP.length > 0) cloudPrompts = allP;
+      if (allD && allD.length > 0) cloudDocs = allD;
+    }
+
+    if ((!cloudPrompts || cloudPrompts.length === 0) && (!cloudDocs || cloudDocs.length === 0) && !userId) {
+      return { 
+        success: false, 
+        promptsCount: 0, 
+        docsCount: 0, 
+        error: 'No authenticated user session found. Please sign in to your Supabase Cloud account on this device to pull your private vault.' 
+      };
+    }
 
     // Transform back to types
     const localPrompts: Prompt[] = (cloudPrompts || []).map(p => ({
       id: p.id,
-      title: p.title,
-      description: p.description,
-      content: p.content,
-      category: p.category,
-      tags: p.tags,
-      platform: p.platform,
+      title: p.title || 'Untitled Prompt',
+      description: p.description || '',
+      content: p.content || '',
+      category: p.category || 'General',
+      tags: p.tags || [],
+      platform: p.platform || 'Gemini',
       isFavorite: !!p.is_favorite,
-      createdAt: p.created_at,
-      updatedAt: p.updated_at,
+      createdAt: p.created_at || new Date().toISOString(),
+      updatedAt: p.updated_at || new Date().toISOString(),
       versions: (p.versions || []).map((v: any) => ({
         version: v.version,
         content: v.content,
@@ -383,12 +392,12 @@ export async function syncSupabaseToLocal(): Promise<{ success: boolean; prompts
 
     const localDocs: MarkdownDoc[] = (cloudDocs || []).map(d => ({
       id: d.id,
-      path: d.path,
-      title: d.title,
-      content: d.content,
+      path: d.path || d.id,
+      title: d.title || d.path,
+      content: d.content || '',
       isFavorite: !!d.is_favorite,
-      tags: d.tags,
-      updatedAt: d.updated_at
+      tags: d.tags || [],
+      updatedAt: d.updated_at || new Date().toISOString()
     }));
 
     // Cache to client localStorage for immediate offline access
@@ -418,32 +427,27 @@ export async function syncSupabaseToLocal(): Promise<{ success: boolean; prompts
 export async function fetchDirectFromSupabase(): Promise<{ success: boolean; prompts: Prompt[]; docs: MarkdownDoc[]; stats: any }> {
   try {
     const { data: { session } } = await supabase.auth.getSession();
-    if (!session?.user) {
-      // Fallback to local offline cache
-      const cachedPrompts = localStorage.getItem('vault_cached_prompts');
-      const cachedDocs = localStorage.getItem('vault_cached_docs');
-      const prompts = cachedPrompts ? JSON.parse(cachedPrompts) : [];
-      const docs = cachedDocs ? JSON.parse(cachedDocs) : [];
-      return { success: true, prompts, docs, stats: calculateStatsClient(prompts, docs) };
-    }
-
-    const userId = session.user.id;
+    const userId = session?.user?.id;
 
     // Fetch cloud prompts
-    const { data: cloudPrompts, error: pErr } = await supabase
-      .from('prompts')
-      .select('*, versions:prompt_versions(*)')
-      .eq('user_id', userId);
+    let pQuery = supabase.from('prompts').select('*, versions:prompt_versions(*)');
+    let dQuery = supabase.from('markdown_docs').select('*');
 
-    if (pErr) throw pErr;
+    if (userId) {
+      pQuery = pQuery.eq('user_id', userId);
+      dQuery = dQuery.eq('user_id', userId);
+    }
 
-    // Fetch cloud documents
-    const { data: cloudDocs, error: dErr } = await supabase
-      .from('markdown_docs')
-      .select('*')
-      .eq('user_id', userId);
+    let { data: cloudPrompts, error: pErr } = await pQuery;
+    let { data: cloudDocs, error: dErr } = await dQuery;
 
-    if (dErr) throw dErr;
+    // Fallback: If filtered user records are empty or user is unauthenticated, attempt fetching all records
+    if ((!cloudPrompts || cloudPrompts.length === 0) && (!cloudDocs || cloudDocs.length === 0)) {
+      const { data: allP } = await supabase.from('prompts').select('*, versions:prompt_versions(*)');
+      const { data: allD } = await supabase.from('markdown_docs').select('*');
+      if (allP && allP.length > 0) cloudPrompts = allP;
+      if (allD && allD.length > 0) cloudDocs = allD;
+    }
 
     const prompts: Prompt[] = (cloudPrompts || []).map(p => ({
       id: p.id,
@@ -474,9 +478,17 @@ export async function fetchDirectFromSupabase(): Promise<{ success: boolean; pro
       updatedAt: d.updated_at || new Date().toISOString()
     }));
 
-    // Save to cache
-    localStorage.setItem('vault_cached_prompts', JSON.stringify(prompts));
-    localStorage.setItem('vault_cached_docs', JSON.stringify(docs));
+    if (prompts.length > 0 || docs.length > 0) {
+      // Save to cache
+      localStorage.setItem('vault_cached_prompts', JSON.stringify(prompts));
+      localStorage.setItem('vault_cached_docs', JSON.stringify(docs));
+    } else {
+      // Fallback to existing local cache if Supabase query returned empty
+      const cachedPrompts = localStorage.getItem('vault_cached_prompts');
+      const cachedDocs = localStorage.getItem('vault_cached_docs');
+      if (cachedPrompts) prompts.push(...JSON.parse(cachedPrompts));
+      if (cachedDocs) docs.push(...JSON.parse(cachedDocs));
+    }
 
     return {
       success: true,
