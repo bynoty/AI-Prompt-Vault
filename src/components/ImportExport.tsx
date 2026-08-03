@@ -35,6 +35,11 @@ import {
   syncSupabaseToLocal, 
   clearPendingRecords, 
   queuePendingRecord,
+  isAutoSyncEnabled,
+  setAutoSyncEnabled,
+  getAutoSyncInterval,
+  setAutoSyncInterval,
+  triggerAutoSync,
   SyncQueueItem,
   SyncStatus,
   SyncSummary
@@ -86,6 +91,23 @@ export default function ImportExport({ prompts, markdowns, onBulkImport, isDark 
   const [cloudAuthLoading, setCloudAuthLoading] = useState(false);
   const [cloudAuthError, setCloudAuthError] = useState('');
   const [cloudAuthSuccess, setCloudAuthSuccess] = useState('');
+
+  // Auto-Sync States
+  const [autoSync, setAutoSync] = useState(() => isAutoSyncEnabled());
+  const [autoSyncSec, setAutoSyncSec] = useState(() => getAutoSyncInterval());
+
+  const handleToggleAutoSync = (enabled: boolean) => {
+    setAutoSync(enabled);
+    setAutoSyncEnabled(enabled);
+    if (enabled) {
+      triggerAutoSync();
+    }
+  };
+
+  const handleIntervalChange = (seconds: number) => {
+    setAutoSyncSec(seconds);
+    setAutoSyncInterval(seconds);
+  };
 
   const handleCloudLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -149,11 +171,57 @@ export default function ImportExport({ prompts, markdowns, onBulkImport, isDark 
     setSyncMsg('Initializing cloud synchronization...');
     setSyncSummary(null);
     try {
+      // 1. Sync pending offline queue
       const summary = await syncLocalToSupabase(conflictStrategy, (percent, message) => {
         setSyncPercent(percent);
         setSyncMsg(message);
       });
-      setSyncSummary(summary);
+
+      // 2. Also trigger server local DB migration to upload local database files to Supabase Cloud
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token || localStorage.getItem('vault_token');
+
+      if (token) {
+        setSyncPercent(60);
+        setSyncMsg('Pushing local database records (vault_db.json) to Supabase Cloud...');
+        const res = await fetch('/api/db/migrate', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          }
+        });
+        const data = await res.json();
+        setSyncPercent(100);
+
+        if (res.ok && data.success) {
+          const totalPrompts = (summary.syncedPrompts || 0) + (data.migratedPrompts || 0);
+          const totalDocs = (summary.syncedDocs || 0) + (data.migratedDocs || 0);
+          
+          const filteredDetails = summary.details.filter(d => !d.includes('No pending local records'));
+          if (data.migratedPrompts > 0 || data.migratedDocs > 0) {
+            filteredDetails.push(`Uploaded ${data.migratedPrompts} prompts and ${data.migratedDocs} docs from local vault DB to Supabase Cloud.`);
+          } else if (data.message) {
+            filteredDetails.push(data.message);
+          }
+
+          setSyncSummary({
+            success: true,
+            syncedPrompts: totalPrompts,
+            syncedDocs: totalDocs,
+            failedCount: summary.failedCount || 0,
+            skippedCount: (summary.skippedCount || 0) + (data.skippedPrompts || 0) + (data.skippedDocs || 0),
+            details: filteredDetails.length > 0 ? filteredDetails : ['Local data and cloud vault are in sync.']
+          });
+
+          setSyncMsg(`Push Complete! Synced ${totalPrompts} prompts and ${totalDocs} markdown documents to Supabase Cloud.`);
+        } else {
+          setSyncSummary(summary);
+        }
+      } else {
+        setSyncSummary(summary);
+      }
+
       refreshSyncState();
     } catch (err: any) {
       console.error('Push to cloud sync failed:', err);
@@ -237,10 +305,14 @@ export default function ImportExport({ prompts, markdowns, onBulkImport, isDark 
     setMigrationSuccess('');
     setMigrationError('');
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token || localStorage.getItem('vault_token');
+
       const res = await fetch('/api/db/migrate', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'Authorization': token ? `Bearer ${token}` : ''
         }
       });
       const data = await res.json();
@@ -252,6 +324,9 @@ export default function ImportExport({ prompts, markdowns, onBulkImport, isDark 
         }
       } else {
         setMigrationError(data.error || 'Failed to migrate local data. Make sure you are signed in via Supabase.');
+        if (res.status === 401) {
+          setShowCloudLogin(true);
+        }
       }
     } catch (err: any) {
       setMigrationError(err.message || 'Network error executing database migration.');
@@ -1002,6 +1077,50 @@ export default function ImportExport({ prompts, markdowns, onBulkImport, isDark 
                 </form>
               </div>
             )}
+
+            {/* Auto-Sync Settings Control Card */}
+            <div className={`p-4 rounded-xl border space-y-3 ${isDark ? 'bg-zinc-950/60 border-zinc-800' : 'bg-white border-zinc-200'}`}>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <CloudLightning className={`w-4.5 h-4.5 ${autoSync ? 'text-amber-400' : 'text-zinc-500'}`} />
+                  <div>
+                    <h4 className="font-bold text-xs">Realtime Auto-Sync Engine</h4>
+                    <p className="text-[10px] text-zinc-500">Syncs live across browser windows and cloud</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleToggleAutoSync(!autoSync)}
+                  className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                    autoSync ? 'bg-emerald-500' : 'bg-zinc-700'
+                  }`}
+                >
+                  <span
+                    className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
+                      autoSync ? 'translate-x-4' : 'translate-x-0'
+                    }`}
+                  />
+                </button>
+              </div>
+
+              {autoSync && (
+                <div className="pt-2 border-t dark:border-zinc-850 flex items-center justify-between text-xs">
+                  <span className="text-[11px] text-zinc-400 font-semibold">Background Interval:</span>
+                  <select
+                    value={autoSyncSec}
+                    onChange={(e) => handleIntervalChange(Number(e.target.value))}
+                    className={`text-xs px-2 py-1 rounded border font-mono ${
+                      isDark ? 'bg-zinc-900 border-zinc-700 text-zinc-200' : 'bg-white border-zinc-300 text-zinc-800'
+                    }`}
+                  >
+                    <option value={15}>Every 15 Seconds</option>
+                    <option value={30}>Every 30 Seconds</option>
+                    <option value={60}>Every 1 Minute</option>
+                    <option value={300}>Every 5 Minutes</option>
+                  </select>
+                </div>
+              )}
+            </div>
 
             {/* Simulated Offline Workload Creator */}
             <div className={`p-4 rounded-xl border space-y-2.5 ${isDark ? 'bg-zinc-950/40 border-zinc-850' : 'bg-zinc-50/50 border-zinc-200'}`}>

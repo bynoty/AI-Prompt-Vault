@@ -30,6 +30,93 @@ export interface SyncStatus {
 
 const QUEUE_KEY = 'vault_offline_sync_queue';
 const LAST_SYNC_KEY = 'vault_last_sync_timestamp';
+const AUTO_SYNC_ENABLED_KEY = 'vault_auto_sync_enabled';
+const AUTO_SYNC_INTERVAL_KEY = 'vault_auto_sync_interval_sec';
+
+/**
+ * Check if Auto-Sync is enabled (defaults to true)
+ */
+export function isAutoSyncEnabled(): boolean {
+  const val = localStorage.getItem(AUTO_SYNC_ENABLED_KEY);
+  return val === null ? true : val === 'true';
+}
+
+/**
+ * Toggle Auto-Sync setting
+ */
+export function setAutoSyncEnabled(enabled: boolean): void {
+  localStorage.setItem(AUTO_SYNC_ENABLED_KEY, enabled ? 'true' : 'false');
+  window.dispatchEvent(new CustomEvent('vault_autosync_setting_changed', { detail: { enabled } }));
+}
+
+/**
+ * Get Auto-Sync interval in seconds (default 60 seconds)
+ */
+export function getAutoSyncInterval(): number {
+  const val = localStorage.getItem(AUTO_SYNC_INTERVAL_KEY);
+  return val ? parseInt(val, 10) : 60;
+}
+
+/**
+ * Set Auto-Sync interval in seconds
+ */
+export function setAutoSyncInterval(seconds: number): void {
+  localStorage.setItem(AUTO_SYNC_INTERVAL_KEY, seconds.toString());
+  window.dispatchEvent(new CustomEvent('vault_autosync_setting_changed', { detail: { interval: seconds } }));
+}
+
+/**
+ * Background Auto-Sync Trigger:
+ * Safely checks if auto-sync is enabled and user is logged in, then pushes pending offline changes and pulls cloud updates.
+ */
+export async function triggerAutoSync(
+  onProgress?: (percent: number, message: string) => void
+): Promise<{ success: boolean; pushed: number; pulled: number; message: string }> {
+  if (!isAutoSyncEnabled()) {
+    return { success: false, pushed: 0, pulled: 0, message: 'Auto-Sync is currently disabled.' };
+  }
+
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.user) {
+    return { success: false, pushed: 0, pulled: 0, message: 'Not logged in to Supabase Cloud.' };
+  }
+
+  try {
+    setSyncStatusState('syncing');
+    
+    // 1. Push any queued offline edits
+    const queue = getPendingRecords();
+    let pushedCount = 0;
+    if (queue.length > 0) {
+      onProgress?.(20, `Auto-pushing ${queue.length} pending local changes to Supabase Cloud...`);
+      const syncSummary = await syncLocalToSupabase('latest_wins', onProgress);
+      pushedCount = (syncSummary.syncedPrompts || 0) + (syncSummary.syncedDocs || 0);
+    }
+
+    // 2. Pull latest cloud items to sync client
+    onProgress?.(70, 'Auto-pulling latest changes from Supabase Cloud...');
+    const pullResult = await syncSupabaseToLocal();
+    const pulledCount = (pullResult.promptsCount || 0) + (pullResult.docsCount || 0);
+
+    setSyncStatusState('success');
+    
+    // Dispatch custom event to inform components (e.g. App.tsx, ImportExport) to update stats/lists
+    window.dispatchEvent(new CustomEvent('vault_autosync_completed', { 
+      detail: { pushed: pushedCount, pulled: pulledCount, timestamp: new Date().toISOString() } 
+    }));
+
+    return {
+      success: true,
+      pushed: pushedCount,
+      pulled: pulledCount,
+      message: `Auto-Sync complete (${pushedCount} pushed, ${pulledCount} pulled)`
+    };
+  } catch (err: any) {
+    setSyncStatusState('error');
+    console.warn('Auto-Sync failed:', err);
+    return { success: false, pushed: 0, pulled: 0, message: err.message || 'Auto-Sync failed' };
+  }
+}
 
 /**
  * Retrieve all pending records from local storage queue

@@ -1,0 +1,19 @@
+{
+  "short_name": "PromptVault",
+  "name": "AI Prompt Vault - Self-Hosted Workspace",
+  "description": "Seamlessly backup, sync, and manage prompt templates and markdown documentation offline or online.",
+  "icons": [
+    {
+      "src": "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512' fill='%238b5cf6'><rect width='512' height='512' rx='128' fill='%2309090b'/><path d='M256 120L120 188l136 68 136-68-136-68zm-136 124l136 68 136-68v40l-136 68-136-68v-40zm0 80l136 68 136-68v40l-136 68-136-68v-40z' fill='%23a855f7'/></svg>",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#09090b",
+  "theme_color": "#8b5cf6",
+  "display": "standalone",
+  "orientation": "any",
+  "categories": ["utilities", "productivity"]
+}

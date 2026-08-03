@@ -3,7 +3,18 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>My Google AI Studio App</title>
+    <meta name="theme-color" content="#8b5cf6" />
+    <meta name="description" content="AI Prompt Vault - Self-Hosted Workspace with Auto-Sync & Offline PWA support" />
+    <link rel="manifest" href="/manifest.json" />
+    <link rel="apple-touch-icon" href="/manifest.json" />
+    <title>AI Prompt Vault</title>
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js').catch((err) => console.log('SW reg failed: ', err));
+        });
+      }
+    </script>
     <script>
       (function() {
         try {

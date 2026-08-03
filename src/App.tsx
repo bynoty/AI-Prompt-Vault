@@ -7,7 +7,15 @@ import MarkdownLibrary from './components/MarkdownLibrary';
 import AIAssistant from './components/AIAssistant';
 import GitIntegration from './components/GitIntegration';
 import ImportExport from './components/ImportExport';
-import { fetchDirectFromSupabase } from './lib/sync';
+import PWAInstall from './components/PWAInstall';
+import { 
+  fetchDirectFromSupabase, 
+  triggerAutoSync, 
+  isAutoSyncEnabled, 
+  getAutoSyncInterval, 
+  getPendingRecords, 
+  queuePendingRecord 
+} from './lib/sync';
 import { supabase } from './lib/supabase';
 
 import { 
@@ -26,7 +34,11 @@ import {
   X,
   Keyboard,
   Command,
-  Search
+  Search,
+  RefreshCw,
+  CloudCheck,
+  CloudOff,
+  CloudLightning
 } from 'lucide-react';
 
 export default function App() {
@@ -163,13 +175,17 @@ export default function App() {
   // Fetch all database models
   const refreshData = async () => {
     try {
-      const [statsRes, promptsRes, markdownsRes] = await Promise.all([
-        fetch('/api/stats'),
-        fetch('/api/prompts'),
-        fetch('/api/markdowns')
-      ]);
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 4000);
 
-      if (statsRes.ok && promptsRes.ok && markdownsRes.ok) {
+      const [statsRes, promptsRes, markdownsRes] = await Promise.all([
+        fetch('/api/stats', { signal: controller.signal }).catch(() => null),
+        fetch('/api/prompts', { signal: controller.signal }).catch(() => null),
+        fetch('/api/markdowns', { signal: controller.signal }).catch(() => null)
+      ]);
+      clearTimeout(timeoutId);
+
+      if (statsRes?.ok && promptsRes?.ok && markdownsRes?.ok) {
         // Double check they didn't return HTML due to Vercel SPA rewrite fallback
         const statsContentType = statsRes.headers.get('content-type') || '';
         if (statsContentType.includes('text/html')) {
@@ -199,10 +215,89 @@ export default function App() {
     }
   };
 
+  // Auto Sync States
+  const [autoSyncEnabled, setAutoSyncEnabledState] = useState(() => isAutoSyncEnabled());
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [lastSyncTime, setLastSyncTime] = useState<string | null>(null);
+  const [pendingQueueCount, setPendingQueueCount] = useState<number>(0);
+
   useEffect(() => {
-    if (user) {
+    if (!user) return;
+
+    // Fetch initial data immediately on user auth
+    refreshData();
+
+    // Listen to custom events from sync.ts
+    const handleSyncCompleted = () => {
+      setIsSyncing(false);
+      setLastSyncTime(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+      setPendingQueueCount(getPendingRecords().length);
       refreshData();
+    };
+
+    const handleSettingChanged = () => {
+      setAutoSyncEnabledState(isAutoSyncEnabled());
+    };
+
+    window.addEventListener('vault_autosync_completed', handleSyncCompleted);
+    window.addEventListener('vault_autosync_setting_changed', handleSettingChanged);
+
+    // Set initial pending count
+    setPendingQueueCount(getPendingRecords().length);
+
+    // Auto-Sync on window/tab focus
+    const handleFocus = () => {
+      if (isAutoSyncEnabled()) {
+        setIsSyncing(true);
+        triggerAutoSync().finally(() => setIsSyncing(false));
+      }
+    };
+    window.addEventListener('focus', handleFocus);
+
+    // Trigger initial background sync
+    if (isAutoSyncEnabled()) {
+      setIsSyncing(true);
+      triggerAutoSync().finally(() => setIsSyncing(false));
     }
+
+    // Interval Timer Sync
+    const intervalSec = getAutoSyncInterval();
+    const intervalId = setInterval(() => {
+      if (isAutoSyncEnabled()) {
+        setIsSyncing(true);
+        triggerAutoSync().finally(() => setIsSyncing(false));
+      }
+    }, Math.max(15, intervalSec) * 1000);
+
+    // Supabase Realtime Channels for instant updates
+    const promptsChannel = supabase
+      .channel('public:prompts')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'prompts' }, () => {
+        if (isAutoSyncEnabled()) {
+          setIsSyncing(true);
+          triggerAutoSync().finally(() => setIsSyncing(false));
+        }
+      })
+      .subscribe();
+
+    const docsChannel = supabase
+      .channel('public:markdown_docs')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'markdown_docs' }, () => {
+        if (isAutoSyncEnabled()) {
+          setIsSyncing(true);
+          triggerAutoSync().finally(() => setIsSyncing(false));
+        }
+      })
+      .subscribe();
+
+    return () => {
+      window.removeEventListener('vault_autosync_completed', handleSyncCompleted);
+      window.removeEventListener('vault_autosync_setting_changed', handleSettingChanged);
+      window.removeEventListener('focus', handleFocus);
+      clearInterval(intervalId);
+      supabase.removeChannel(promptsChannel);
+      supabase.removeChannel(docsChannel);
+    };
   }, [user]);
 
   const toggleTheme = () => {
@@ -235,6 +330,8 @@ export default function App() {
       });
       if (res.ok) {
         const data = await res.json();
+        queuePendingRecord('prompt', 'insert', data.id, data);
+        if (autoSyncEnabled) triggerAutoSync();
         await refreshData();
         return data;
       }
@@ -264,6 +361,8 @@ export default function App() {
         updatedAt: new Date().toISOString()
       };
 
+      queuePendingRecord('prompt', 'insert', generatedId, newPrompt);
+
       if (session?.user) {
         await supabase.from('prompts').insert({
           id: generatedId,
@@ -292,6 +391,8 @@ export default function App() {
       const arr = cached ? JSON.parse(cached) : [];
       arr.unshift(newPrompt);
       localStorage.setItem('vault_cached_prompts', JSON.stringify(arr));
+      
+      if (autoSyncEnabled) triggerAutoSync();
       await refreshData();
       return newPrompt;
     }
@@ -306,6 +407,8 @@ export default function App() {
       });
       if (res.ok) {
         const data = await res.json();
+        queuePendingRecord('prompt', 'update', id, data);
+        if (autoSyncEnabled) triggerAutoSync();
         await refreshData();
         return data;
       }
@@ -348,6 +451,8 @@ export default function App() {
         updatedAt: new Date().toISOString()
       };
 
+      queuePendingRecord('prompt', 'update', id, updatedPrompt);
+
       if (session?.user) {
         await supabase.from('prompts').update({
           title: updatedPrompt.title,
@@ -373,15 +478,19 @@ export default function App() {
 
       arr[currentIdx] = updatedPrompt;
       localStorage.setItem('vault_cached_prompts', JSON.stringify(arr));
+      
+      if (autoSyncEnabled) triggerAutoSync();
       await refreshData();
       return updatedPrompt;
     }
   };
 
   const handleDeletePrompt = async (id: string) => {
+    queuePendingRecord('prompt', 'delete', id, { id });
     try {
       const res = await fetch(`/api/prompts/${id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error('Fallback to direct Supabase');
+      if (autoSyncEnabled) triggerAutoSync();
       await refreshData();
     } catch (err) {
       console.warn('Backend prompt delete failed. Executing directly on Supabase client-side...', err);
@@ -395,6 +504,7 @@ export default function App() {
         const arr = JSON.parse(cached).filter((p: Prompt) => p.id !== id);
         localStorage.setItem('vault_cached_prompts', JSON.stringify(arr));
       }
+      if (autoSyncEnabled) triggerAutoSync();
       await refreshData();
     }
   };
@@ -409,6 +519,8 @@ export default function App() {
       });
       if (res.ok) {
         const data = await res.json();
+        queuePendingRecord('markdown', 'insert', data.id, data);
+        if (autoSyncEnabled) triggerAutoSync();
         await refreshData();
         return data;
       }
@@ -428,6 +540,8 @@ export default function App() {
         tags: d.tags || []
       };
 
+      queuePendingRecord('markdown', 'insert', generatedId, newDoc);
+
       if (session?.user) {
         await supabase.from('markdown_docs').insert({
           id: generatedId,
@@ -445,6 +559,8 @@ export default function App() {
       const arr = cached ? JSON.parse(cached) : [];
       arr.push(newDoc);
       localStorage.setItem('vault_cached_docs', JSON.stringify(arr));
+      
+      if (autoSyncEnabled) triggerAutoSync();
       await refreshData();
       return newDoc;
     }
@@ -459,6 +575,8 @@ export default function App() {
       });
       if (res.ok) {
         const data = await res.json();
+        queuePendingRecord('markdown', 'update', id, data);
+        if (autoSyncEnabled) triggerAutoSync();
         await refreshData();
         return data;
       }
@@ -483,6 +601,8 @@ export default function App() {
         updatedAt: new Date().toISOString()
       };
 
+      queuePendingRecord('markdown', 'update', id, updatedDoc);
+
       if (session?.user) {
         await supabase.from('markdown_docs').update({
           path: updatedDoc.path,
@@ -496,15 +616,19 @@ export default function App() {
 
       arr[currentIdx] = updatedDoc;
       localStorage.setItem('vault_cached_docs', JSON.stringify(arr));
+      
+      if (autoSyncEnabled) triggerAutoSync();
       await refreshData();
       return updatedDoc;
     }
   };
 
   const handleDeleteDoc = async (id: string) => {
+    queuePendingRecord('markdown', 'delete', id, { id });
     try {
       const res = await fetch(`/api/markdowns/${id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error('Fallback to direct Supabase');
+      if (autoSyncEnabled) triggerAutoSync();
       await refreshData();
     } catch (err) {
       console.warn('Backend markdown delete failed. Executing directly on Supabase client-side...', err);
@@ -517,6 +641,7 @@ export default function App() {
         const arr = JSON.parse(cached).filter((d: MarkdownDoc) => d.id !== id);
         localStorage.setItem('vault_cached_docs', JSON.stringify(arr));
       }
+      if (autoSyncEnabled) triggerAutoSync();
       await refreshData();
     }
   };
@@ -767,9 +892,46 @@ export default function App() {
           </nav>
         </div>
 
-        {/* Profile Footer */}
-        <div className="space-y-3">
-          <div className={`p-3.5 rounded-2xl flex items-center justify-between gap-2 border ${
+        {/* Profile Footer & Auto Sync Indicator */}
+        <div className="space-y-2.5">
+          {/* PWA Desktop App Installation Banner */}
+          <PWAInstall isDark={isDark} />
+
+          {/* Live Auto-Sync Status Widget */}
+          <div className={`p-3 rounded-xl border flex items-center justify-between text-xs font-semibold ${
+            isDark ? 'bg-zinc-950/40 border-zinc-800/80' : 'bg-zinc-50 border-zinc-200'
+          }`}>
+            <div className="flex items-center gap-2 min-w-0">
+              {isSyncing ? (
+                <RefreshCw className="w-3.5 h-3.5 text-violet-400 animate-spin shrink-0" />
+              ) : autoSyncEnabled ? (
+                <CloudCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+              ) : (
+                <CloudOff className="w-3.5 h-3.5 text-zinc-500 shrink-0" />
+              )}
+              <div className="truncate">
+                <span className="text-[11px] font-bold block truncate">
+                  {isSyncing ? 'Auto-Syncing...' : autoSyncEnabled ? 'Auto-Sync Active' : 'Auto-Sync Paused'}
+                </span>
+                <span className="text-[9px] text-zinc-500 font-mono block truncate">
+                  {pendingQueueCount > 0 ? `${pendingQueueCount} items queued` : lastSyncTime ? `Synced ${lastSyncTime}` : 'Connected'}
+                </span>
+              </div>
+            </div>
+            <button
+              onClick={() => {
+                setIsSyncing(true);
+                triggerAutoSync().finally(() => setIsSyncing(false));
+              }}
+              disabled={isSyncing}
+              className="px-2 py-1 rounded bg-violet-500/10 hover:bg-violet-500/20 text-violet-400 text-[10px] font-bold transition-all disabled:opacity-50 shrink-0 cursor-pointer"
+              title="Manual Trigger Sync"
+            >
+              Sync
+            </button>
+          </div>
+
+          <div className={`p-3 rounded-2xl flex items-center justify-between gap-2 border ${
             isDark ? 'bg-zinc-950/60 border-zinc-800' : 'bg-zinc-50 border-zinc-150'
           }`}>
             <div className="min-w-0">

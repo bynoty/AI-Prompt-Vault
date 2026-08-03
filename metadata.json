@@ -1,1 +1,6 @@
-{"name":"AI Prompt Vault","description":"A self-hosted knowledge management platform for AI prompts, Markdown documents, and reusable AI resources with RAG search and Git sync.","requestFramePermissions":[],"majorCapabilities":["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]}
+{
+  "name": "AI Prompt Vault",
+  "description": "A self-hosted knowledge management platform for AI prompts, Markdown documents, and reusable AI resources with RAG search and Git sync.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
