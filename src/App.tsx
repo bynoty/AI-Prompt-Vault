@@ -691,14 +691,120 @@ export default function App() {
 
   // Bulk imports JSON
   const handleBulkImport = async (payload: { prompts?: any[]; markdowns?: any[] }) => {
-    const res = await fetch('/api/import/json', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-    const data = await res.json();
-    await refreshData();
-    return data;
+    try {
+      const res = await fetch('/api/import/json', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (res.ok) {
+        const contentType = res.headers.get('content-type') || '';
+        if (contentType.includes('application/json')) {
+          const data = await res.json();
+          await refreshData();
+          return data;
+        }
+      }
+      throw new Error('API not available or returned non-JSON response');
+    } catch (err) {
+      console.warn('Backend bulk import failed. Running import directly on client-side (Vercel/Static mode)...', err);
+      // Client-side fallback implementation:
+      const { prompts: importedPrompts, markdowns: importedMarkdowns } = payload;
+      let addedPrompts = 0;
+      let addedDocs = 0;
+
+      const { data: { session } } = await supabase.auth.getSession();
+      const userId = session?.user?.id;
+
+      if (Array.isArray(importedPrompts)) {
+        for (const p of importedPrompts) {
+          if (p.title && p.content) {
+            const generatedId = p.id || `p_imp_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+            const newPrompt: Prompt = {
+              id: generatedId,
+              title: p.title,
+              description: p.description || "",
+              content: p.content,
+              category: p.category || "Imported",
+              tags: p.tags || [],
+              platform: p.platform || "Gemini",
+              isFavorite: !!p.isFavorite,
+              versions: p.versions || [{ version: 1, content: p.content, updatedAt: new Date().toISOString(), comment: "Imported prompt" }],
+              createdAt: p.createdAt || new Date().toISOString(),
+              updatedAt: new Date().toISOString()
+            };
+
+            queuePendingRecord('prompt', 'insert', generatedId, newPrompt);
+            addedPrompts++;
+
+            if (session?.user) {
+              await supabase.from('prompts').insert({
+                id: generatedId,
+                user_id: userId,
+                title: newPrompt.title,
+                description: newPrompt.description,
+                content: newPrompt.content,
+                category: newPrompt.category,
+                tags: newPrompt.tags,
+                platform: newPrompt.platform,
+                is_favorite: newPrompt.isFavorite,
+                created_at: newPrompt.createdAt,
+                updated_at: newPrompt.updatedAt
+              });
+              
+              // Also insert versions
+              for (const v of newPrompt.versions) {
+                await supabase.from('prompt_versions').insert({
+                  prompt_id: generatedId,
+                  version: v.version,
+                  content: v.content,
+                  updated_at: v.updatedAt,
+                  comment: v.comment || 'Imported version'
+                });
+              }
+            }
+          }
+        }
+      }
+
+      if (Array.isArray(importedMarkdowns)) {
+        for (const m of importedMarkdowns) {
+          if (m.path && m.content) {
+            const cleanPath = m.path.startsWith('/') ? m.path.substring(1) : m.path;
+            const generatedId = m.id || `md_imp_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+            const newDoc: MarkdownDoc = {
+              id: generatedId,
+              path: cleanPath,
+              title: m.title || cleanPath.split('/').pop()?.replace('.md', '') || 'Imported File',
+              content: m.content,
+              isFavorite: !!m.isFavorite,
+              tags: m.tags || [],
+              updatedAt: m.updatedAt || new Date().toISOString()
+            };
+
+            queuePendingRecord('markdown', 'insert', generatedId, newDoc);
+            addedDocs++;
+
+            if (session?.user) {
+              await supabase.from('markdown_docs').insert({
+                id: generatedId,
+                user_id: userId,
+                path: newDoc.path,
+                title: newDoc.title,
+                content: newDoc.content,
+                is_favorite: newDoc.isFavorite,
+                tags: newDoc.tags,
+                updated_at: newDoc.updatedAt
+              });
+            }
+          }
+        }
+      }
+
+      if (autoSyncEnabled) triggerAutoSync();
+      await refreshData();
+      return { success: true, addedPrompts, addedDocs };
+    }
   };
 
   // Quick navigation jumpers from widgets
